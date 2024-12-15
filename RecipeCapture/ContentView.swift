@@ -4,26 +4,71 @@
 //
 //  Created by [Your Name] on [Date].
 //
-//  This file contains the main UI with a split view:
-//    - Left (master): A list of recognized items.
-//    - Right (detail): Provided by DetailView in RecipeOCRView.swift.
-//
-//  It also initiates scanning (via ScannerView in RecipeCameraOCRView.swift),
-//  triggers OCR processing (via TextRecognition in RecipeOCRTrainerView.swift),
-//  and manages the recognized items (via RecognizedContent).
+//  Persistence: The recognized items are saved to disk and loaded on app launch.
+//  Trimmed sidebar text: 40 chars.
+//  Bottom detail panels are scrollable.
+//  Automatically select the latest capture after OCR completes.
 //
 
 import SwiftUI
 
-struct TextItem: Identifiable, Hashable {
-    let id = UUID()
+struct TextItem: Identifiable, Hashable, Codable {
+    let id: UUID
     let text: String
-    let rawImage: UIImage
-    let processedImage: UIImage
+    let rawImageData: Data
+    let processedImageData: Data
+
+    init(id: UUID = UUID(), text: String, rawImage: UIImage, processedImage: UIImage) {
+        self.id = id
+        self.text = text
+        self.rawImageData = rawImage.pngData() ?? Data()
+        self.processedImageData = processedImage.pngData() ?? Data()
+    }
+
+    var rawImage: UIImage? {
+        UIImage(data: rawImageData)
+    }
+
+    var processedImage: UIImage? {
+        UIImage(data: processedImageData)
+    }
 }
 
 class RecognizedContent: ObservableObject {
     @Published var items: [TextItem] = []
+
+    private let filename = "items.json"
+
+    init() {
+        loadItems()
+    }
+
+    func getDocumentsDirectory() -> URL {
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+    }
+
+    func loadItems() {
+        let fileURL = getDocumentsDirectory().appendingPathComponent(filename)
+        guard FileManager.default.fileExists(atPath: fileURL.path) else { return }
+
+        do {
+            let data = try Data(contentsOf: fileURL)
+            let decoded = try JSONDecoder().decode([TextItem].self, from: data)
+            self.items = decoded
+        } catch {
+            print("Error loading items: \(error)")
+        }
+    }
+
+    func saveItems() {
+        let fileURL = getDocumentsDirectory().appendingPathComponent(filename)
+        do {
+            let data = try JSONEncoder().encode(items)
+            try data.write(to: fileURL, options: .atomicWrite)
+        } catch {
+            print("Error saving items: \(error)")
+        }
+    }
 }
 
 struct ContentView: View {
@@ -34,14 +79,14 @@ struct ContentView: View {
 
     var body: some View {
         NavigationView {
-            // Left pane: list of recognized items
+            // Left pane: list of recognized items (trim to 40 chars)
             List(recognizedContent.items, selection: $selectedItem) { textItem in
                 NavigationLink(
                     destination: DetailView(item: textItem),
                     tag: textItem,
                     selection: $selectedItem
                 ) {
-                    Text(String(textItem.text.prefix(50)).appending("..."))
+                    Text(String(textItem.text.prefix(40)) + (textItem.text.count > 40 ? "..." : ""))
                 }
             }
             .navigationTitle("Text Scanner")
@@ -63,8 +108,8 @@ struct ContentView: View {
                     .cornerRadius(18)
                 })
             )
-            
-            // Right pane
+
+            // Right pane: detail view
             DetailView(item: selectedItem)
         }
         .navigationViewStyle(DoubleColumnNavigationViewStyle())
@@ -73,8 +118,13 @@ struct ContentView: View {
                 switch result {
                 case .success(let scannedImages):
                     isRecognizing = true
+                    // When OCR completes, it adds a new item and calls completion.
                     TextRecognition(scannedImages: scannedImages, recognizedContent: recognizedContent) {
                         isRecognizing = false
+                        // Automatically select the latest item
+                        if let lastItem = recognizedContent.items.last {
+                            selectedItem = lastItem
+                        }
                     }
                     .recognizeText()
                 case .failure(let error):
@@ -98,6 +148,9 @@ struct ContentView: View {
                 }
             }
         )
+        .onChange(of: recognizedContent.items) { _ in
+            recognizedContent.saveItems()
+        }
     }
 }
 
