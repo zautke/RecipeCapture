@@ -1,60 +1,63 @@
 //
-//  ScannerView.swift
-//  ScanAndRecognizeText
+//  RecipeCameraOCRView.swift
+//  RecipeCapture
 //
-//  Created by Gabriel Theodoropoulos.
+//  Created by [Your Name] on [Date].
+//
+//  This file contains the ScannerView which uses the VisionKit
+//  VNDocumentCameraViewController to capture images from the camera.
+//  The captured images are returned to ContentView for OCR processing.
 //
 
 import SwiftUI
 import VisionKit
 
-
 struct ScannerView: UIViewControllerRepresentable {
-    var didFinishScanning: ((_ result: Result<[UIImage], Error>) -> Void)
-    var didCancelScanning: () -> Void
-    
+    var didFinishScanning: ((Result<[UIImage], Error>) -> Void)
+    var didCancelScanning: (() -> Void)
+
     func makeUIViewController(context: Context) -> VNDocumentCameraViewController {
-        let scannerViewController = VNDocumentCameraViewController()
-        scannerViewController.delegate = context.coordinator
-        return scannerViewController
+        let scannerVC = VNDocumentCameraViewController()
+        scannerVC.delegate = context.coordinator
+        return scannerVC
     }
-    
-    func updateUIViewController(_ uiViewController: VNDocumentCameraViewController, context: Context) { }
-    
-    
+
+    func updateUIViewController(_ uiViewController: VNDocumentCameraViewController, context: Context) {}
+
     func makeCoordinator() -> Coordinator {
-        Coordinator(with: self)
+        Coordinator(didFinishScanning: didFinishScanning, didCancelScanning: didCancelScanning)
     }
-    
-    
-    class Coordinator: NSObject, @preconcurrency VNDocumentCameraViewControllerDelegate {
-        let scannerView: ScannerView
-        
-        init(with scannerView: ScannerView) {
-            self.scannerView = scannerView
+
+    class Coordinator: NSObject, VNDocumentCameraViewControllerDelegate {
+        var didFinishScanning: ((Result<[UIImage], Error>) -> Void)
+        var didCancelScanning: (() -> Void)
+
+        init(didFinishScanning: @escaping ((Result<[UIImage], Error>) -> Void),
+             didCancelScanning: @escaping (() -> Void)) {
+            self.didFinishScanning = didFinishScanning
+            self.didCancelScanning = didCancelScanning
         }
-        
-        
-        // MARK: - VNDocumentCameraViewControllerDelegate
-        
-        @MainActor func documentCameraViewController(_ controller: VNDocumentCameraViewController, didFinishWith scan: VNDocumentCameraScan) {
-            var scannedPages = [UIImage]()
-            
+
+        func documentCameraViewController(_ controller: VNDocumentCameraViewController, didFinishWith scan: VNDocumentCameraScan) {
+            var images: [UIImage] = []
             for i in 0..<scan.pageCount {
-                scannedPages.append(scan.imageOfPage(at: i))
+                images.append(scan.imageOfPage(at: i))
             }
-            
-            scannerView.didFinishScanning(.success(scannedPages))
+            controller.dismiss(animated: true) {
+                self.didFinishScanning(.success(images))
+            }
         }
-        
-        
-        @MainActor func documentCameraViewControllerDidCancel(_ controller: VNDocumentCameraViewController) {
-            scannerView.didCancelScanning()
+
+        func documentCameraViewControllerDidCancel(_ controller: VNDocumentCameraViewController) {
+            controller.dismiss(animated: true) {
+                self.didCancelScanning()
+            }
         }
-        
-        @MainActor func documentCameraViewController(_ controller: VNDocumentCameraViewController, didFailWithError error: Error) {
-            scannerView.didFinishScanning(.failure(error))
+
+        func documentCameraViewController(_ controller: VNDocumentCameraViewController, didFailWithError error: Error) {
+            controller.dismiss(animated: true) {
+                self.didFinishScanning(.failure(error))
+            }
         }
     }
-    
 }
