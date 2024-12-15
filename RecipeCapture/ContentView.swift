@@ -2,12 +2,13 @@
 //  ContentView.swift
 //  RecipeCapture
 //
-//  Created by [Your Name] on [Date].
+//  Changes:
+//    - Persistence as before.
+//    - Trim sidebar text to 40 chars and one line.
+//    - Automatically select the latest capture after OCR.
+//    - No changes to pinch zoom or spacing logic here, all logic done in DetailView.
 //
-//  Persistence: The recognized items are saved to disk and loaded on app launch.
-//  Trimmed sidebar text: 40 chars.
-//  Bottom detail panels are scrollable.
-//  Automatically select the latest capture after OCR completes.
+//  We ensure the sidebar text shows only one line using .lineLimit(1).
 //
 
 import SwiftUI
@@ -79,7 +80,6 @@ struct ContentView: View {
 
     var body: some View {
         NavigationView {
-            // Left pane: list of recognized items (trim to 40 chars)
             List(recognizedContent.items, selection: $selectedItem) { textItem in
                 NavigationLink(
                     destination: DetailView(item: textItem),
@@ -87,6 +87,7 @@ struct ContentView: View {
                     selection: $selectedItem
                 ) {
                     Text(String(textItem.text.prefix(40)) + (textItem.text.count > 40 ? "..." : ""))
+                        .lineLimit(1) // Only one line in the sidebar
                 }
             }
             .navigationTitle("Text Scanner")
@@ -109,7 +110,6 @@ struct ContentView: View {
                 })
             )
 
-            // Right pane: detail view
             DetailView(item: selectedItem)
         }
         .navigationViewStyle(DoubleColumnNavigationViewStyle())
@@ -118,10 +118,8 @@ struct ContentView: View {
                 switch result {
                 case .success(let scannedImages):
                     isRecognizing = true
-                    // When OCR completes, it adds a new item and calls completion.
                     TextRecognition(scannedImages: scannedImages, recognizedContent: recognizedContent) {
                         isRecognizing = false
-                        // Automatically select the latest item
                         if let lastItem = recognizedContent.items.last {
                             selectedItem = lastItem
                         }
@@ -151,11 +149,5 @@ struct ContentView: View {
         .onChange(of: recognizedContent.items) { _ in
             recognizedContent.saveItems()
         }
-    }
-}
-
-struct ContentView_Previews: PreviewProvider {
-    static var previews: some View {
-        ContentView()
     }
 }
